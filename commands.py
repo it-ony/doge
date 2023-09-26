@@ -1,5 +1,8 @@
+from typing import List
+
 import adsk.core
 import adsk.fusion
+from abc import ABC, abstractmethod
 
 from .log import logger
 
@@ -32,8 +35,9 @@ class RunningCommandBase(object):
     To use this class, inherit from it an override the events.
     """
 
-    def __init__(self, _args):
+    def __init__(self, args):
         runningCommands.add(self)
+        self._command = adsk.core.Command.cast(args.command)
 
         self._inputChangedHandler = None
         self._selectionHandler = None
@@ -71,9 +75,6 @@ class RunningCommandBase(object):
             adsk.core.CommandEventHandler, self.onDestroy)
         cmd.destroy.add(self._destroyHandler)
 
-    def onCreated(self, args):
-        pass
-
     def onInputChanged(self, args):
         pass
 
@@ -93,33 +94,41 @@ class RunningCommandBase(object):
         runningCommands.remove(self)
 
 
-class AddIn(object):
+class Action(ABC):
+    def __init__(self, id: str, buttonName: str, toolTip: str, resource: str, commandClass) -> None:
+        super().__init__()
+        self.id = id
+        self.buttonName = buttonName
+        self.toolTip = toolTip
+        self.resource = resource
+        self.commandClass = commandClass
+
+
+def getCallbackForAction(action: Action):
+    def callback(args):
+        command_class: RunningCommandBase = action.commandClass(args)
+        command_class.onCreate(args)
+
+    return callback
+
+
+class AddIn(ABC):
     # Defaults that are None have to be overridden in derived classes.
-    COMMAND_ID = None
-    FEATURE_NAME = None
-    RESOURCE_FOLDER = None
-    CREATE_TOOLTIP = ''
-    EDIT_TOOLTIP = ''
-    PANEL_NAME = None
-    RUNNING_CREATE_COMMAND_CLASS = None
+    PANEL_NAME = 'SolidModifyPanel'
 
     def __init__(self):
         fusion = adsk.core.Application.get()
         self.fusionUI = fusion.userInterface
+        self._actions = self.actions()
+        self.handler = []
 
-        # Add handler for creating the feature.
-        self._createHandler = handler(
-            adsk.core.CommandCreatedEventHandler, self._onCreate)
+    @abstractmethod
+    def actions(self) -> List[Action]:
+        pass
 
-    def _onCreate(self, args):
-        running_command = self.RUNNING_CREATE_COMMAND_CLASS(args)
-        running_command.onCreate(args)
-
-    def _getCreateButtonId(self):
-        return self.COMMAND_ID + 'Create'
-
-    def _getCreateButtonName(self):
-        return self.FEATURE_NAME
+    @abstractmethod
+    def _prefix(self) -> str:
+        pass
 
     def addToUi(self):
         # If there are existing instances of the button, clean them up first.
@@ -129,23 +138,36 @@ class AddIn(object):
             logger.exception(e)
             pass
 
-        # Create a command for creating the feature.
-        createCommandDefinition = self.fusionUI.commandDefinitions.addButtonDefinition(
-            self._getCreateButtonId(), self._getCreateButtonName(), self.CREATE_TOOLTIP, self.RESOURCE_FOLDER)
-        createCommandDefinition.commandCreated.add(self._createHandler)
+        prefix = self._prefix()
 
-        # Add a button to the UI.
-        panel = self.fusionUI.allToolbarPanels.itemById(self.PANEL_NAME)
-        buttonControl = panel.controls.addCommand(createCommandDefinition)
-        buttonControl.isPromotedByDefault = True
-        buttonControl.isPromoted = True
+        for action in self._actions:
+            commandDefinition = self.fusionUI.commandDefinitions.addButtonDefinition(
+                f"{prefix}_{action.id}", action.buttonName, action.toolTip, action.resource)
+
+            h = handler(adsk.core.CommandCreatedEventHandler, getCallbackForAction(action))
+            self.handler.append(h)
+            commandDefinition.commandCreated.add(h)
+
+            # Add a button to the UI.
+            panel = self.fusionUI.allToolbarPanels.itemById(self.PANEL_NAME)
+            buttonControl = panel.controls.addCommand(commandDefinition)
+            buttonControl.isPromotedByDefault = True
+            buttonControl.isPromoted = True
 
     def removeFromUI(self):
-        createCommandDefinition = self.fusionUI.commandDefinitions.itemById(self._getCreateButtonId())
-        if createCommandDefinition:
-            createCommandDefinition.deleteMe()
 
-        panel = self.fusionUI.allToolbarPanels.itemById(self.PANEL_NAME)
-        buttonControl = panel.controls.itemById(self._getCreateButtonId())
-        if buttonControl:
-            buttonControl.deleteMe()
+        prefix = self._prefix()
+
+        for action in self._actions:
+            buttonId = f"{prefix}_{action.id}"
+
+            createCommandDefinition = self.fusionUI.commandDefinitions.itemById(buttonId)
+            if createCommandDefinition:
+                createCommandDefinition.deleteMe()
+
+            panel = self.fusionUI.allToolbarPanels.itemById(self.PANEL_NAME)
+            buttonControl = panel.controls.itemById(buttonId)
+            if buttonControl:
+                buttonControl.deleteMe()
+
+        self.handler = []

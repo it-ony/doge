@@ -1,6 +1,7 @@
 import math
 from typing import cast, List, Union
 
+from .feature import saveToFeature
 from .log import logger
 from .options import DogeboneFeatureInput
 
@@ -221,7 +222,7 @@ def createDogeBones(inputs: DogeboneFeatureInput):
     # [str] faceId
     # face [adsk.fusion.BRepFace]
     for faceId, face in inputs.faces.items():
-        toolCollection = adsk.core.ObjectCollection.create()
+
         toolBodies = None
 
         # TODO: topFace
@@ -250,12 +251,14 @@ def createDogeBones(inputs: DogeboneFeatureInput):
 
         baseFeature = _rootComp.features.baseFeatures.add()
         baseFeature.name = "doge"
+        saveToFeature(baseFeature, inputs, face)
 
         baseFeature.startEdit()
         dbB = _rootComp.bRepBodies.add(toolBodies, baseFeature)
         dbB.name = "dogboneTool"
         baseFeature.finishEdit()
 
+        toolCollection = adsk.core.ObjectCollection.create()
         toolCollection.add(baseFeature.bodies.item(0))
 
         activeBody = native(face).body
@@ -269,6 +272,7 @@ def createDogeBones(inputs: DogeboneFeatureInput):
             adsk.fusion.FeatureOperations.CutFeatureOperation
         )
         combine = _rootComp.features.combineFeatures.add(combineInput)
+        combine.name = 'doge_combine'
 
     endTlMarker = _design.timeline.markerPosition - 1
     if endTlMarker - startTlMarker > 0:

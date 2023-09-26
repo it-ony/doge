@@ -60,12 +60,17 @@ class DogeboneFeatureInput(object):
         self.readDefaults()
 
     def writeDefaults(self):
-        data = {
+        with open(self.DEFAULTS_FILENAME, 'w', encoding='UTF-8') as json_file:
+            json.dump(self.data(), json_file, ensure_ascii=False)
+
+    def data(self):
+        return {
             'dogeboneType': self.dogeboneType,
             'toolDiameter': self.toolDiameter.expression
         }
-        with open(self.DEFAULTS_FILENAME, 'w', encoding='UTF-8') as json_file:
-            json.dump(data, json_file, ensure_ascii=False)
+
+    def asJson(self) -> str:
+        return json.dumps(self.data())
 
     def readDefaults(self):
         def expressionOrDefault(value, default):

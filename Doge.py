@@ -1,19 +1,15 @@
-# Author: Tony Findeisen
-# Description: An Add-in for making dogebones
-from typing import Optional
+from typing import Optional, List, cast, Union
 
 import adsk.core
 import adsk.fusion
 
-
 from .log import logger
+from .commands import Action
 from . import util
 from . import commands
 from . import options
 from . import geometry
 from . import ui
-
-# from . import geometry
 
 # Global variable to hold the add-in (created in run(), destroyed in stop())
 addIn: Optional[commands.AddIn] = None
@@ -60,31 +56,43 @@ class CreateDogeCommand(commands.RunningCommandBase):
         self.lastUsedInputs = inputs
         geometry.createDogeBones(inputs)
 
-        # toolBodies = geometry.createToolBodies(inputs)
-        # if toolBodies == True:
-        #     # No cut is neccessary (bodies do not overlap).
-        #     return True
-        # elif toolBodies == False:
-        #     # No cut is possible (e.g., because of invalid inputs).
-        #     return False
-        # else:
-        #     self.createCustomFeature(inputs, *toolBodies)
-        #     return True
-
     def onDestroy(self, args: adsk.core.CommandEventArgs):
         super().onDestroy(args)
         if args.terminationReason == adsk.core.CommandTerminationReason.CompletedTerminationReason:
             self.lastUsedInputs.writeDefaults()
 
 
+class UpdateDogeCommand(commands.RunningCommandBase):
+
+    def onExecute(self, args):
+        app = adsk.core.Application.get()
+        design: adsk.fusion.Design = cast(adsk.fusion.Design, app.activeProduct)
+
+        def processFeature(tl: adsk.fusion.TimelineObject):
+            logger.warning(tl.name)
+            logger.warning(tl.entity.classType())
+
+        def processTimeline(timeline: Union[adsk.fusion.Timeline, adsk.fusion.TimelineGroup]):
+            for tl in timeline:
+                if tl.isGroup:
+                    processTimeline(cast(adsk.fusion.TimelineGroup, tl))
+                else:
+                    processFeature(tl)
+
+        processTimeline(design.timeline)
+
+        # logger.warning(feature.name)
+
+
 class DogeAddIn(commands.AddIn):
-    COMMAND_ID = 'tfDoge'
-    FEATURE_NAME = 'Doge'
-    RESOURCE_FOLDER = 'resources/ui/create_button'
-    CREATE_TOOLTIP = 'Creates dogbones for given faces'
-    EDIT_TOOLTIP = 'Edit dogbones'
-    PANEL_NAME = 'SolidModifyPanel'
-    RUNNING_CREATE_COMMAND_CLASS = CreateDogeCommand
+    def _prefix(self) -> str:
+        return 'tfDoge'
+
+    def actions(self) -> List[Action]:
+        return [
+            Action('create', 'Create Dogbone', 'Creates dogbones for given faces', 'resources/ui/create_button', CreateDogeCommand),
+            Action('update', 'Update Dogbones', 'Update all dogbones', 'resources/ui/create_button', UpdateDogeCommand)
+        ]
 
 
 def run(_context):
