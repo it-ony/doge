@@ -1,0 +1,13 @@
+{
+    "autodeskProduct": "Fusion360",
+    "type": "addin",
+    "id": "8decf70a-575f-4772-beff-b05314e7fc34",
+    "author": "Tony Findeisen",
+    "description": {
+        "": "An Add-In for making dog-bone fillets."
+    },
+    "version": "0.1",
+    "runOnStartup": true,
+    "supportedOS": "windows|mac",
+    "editEnabled": true
+}
