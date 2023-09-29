@@ -3,6 +3,7 @@ from typing import Optional, List, cast, Union
 import adsk.core
 import adsk.fusion
 
+from .geometry import updateDogFeature
 from .log import logger
 from .commands import Action
 from . import util
@@ -68,18 +69,28 @@ class UpdateDogeCommand(commands.RunningCommandBase):
         app = adsk.core.Application.get()
         design: adsk.fusion.Design = cast(adsk.fusion.Design, app.activeProduct)
 
-        def processFeature(tl: adsk.fusion.TimelineObject):
-            logger.warning(tl.name)
-            logger.warning(tl.entity.classType())
+        def processFeature(obj: adsk.fusion.TimelineObject):
+
+            if obj.entity.classType() == adsk.fusion.BaseFeature.classType():
+                feature = cast(adsk.fusion.BaseFeature, obj.entity)
+                updateDogFeature(feature, obj)
 
         def processTimeline(timeline: Union[adsk.fusion.Timeline, adsk.fusion.TimelineGroup]):
-            for tl in timeline:
-                if tl.isGroup:
-                    processTimeline(cast(adsk.fusion.TimelineGroup, tl))
+            for obj in timeline:
+                if obj.isGroup:
+                    group = cast(adsk.fusion.TimelineGroup, obj)
+                    isCollapsed = group.isCollapsed
+                    group.isCollapsed = False
+                    processTimeline(group)
+                    group.isCollapsed = isCollapsed
                 else:
-                    processFeature(tl)
+                    processFeature(obj)
 
-        processTimeline(design.timeline)
+        position = design.timeline.markerPosition
+        try:
+            processTimeline(design.timeline)
+        finally:
+            design.timeline.markerPosition = position
 
         # logger.warning(feature.name)
 

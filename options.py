@@ -72,6 +72,16 @@ class DogeboneFeatureInput(object):
     def asJson(self) -> str:
         return json.dumps(self.data())
 
+    @classmethod
+    def fromJson(cls, data: str) -> "DogeboneFeatureInput":
+        data = json.loads(data)
+
+        input = DogeboneFeatureInput()
+        input.dogeboneType = data['dogeboneType']
+        input.toolDiameter = FusionExpression(data['toolDiameter'])
+
+        return input
+
     def readDefaults(self):
         def expressionOrDefault(value, default):
             expression = FusionExpression(value)

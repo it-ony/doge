@@ -1,12 +1,16 @@
 import math
-from typing import cast, List, Union
+from typing import cast, List, Union, Optional
 
-from .feature import saveToFeature
 from .log import logger
 from .options import DogeboneFeatureInput
 
 import adsk.core
 import adsk.fusion
+
+FACE = 'face'
+INPUT = 'input'
+
+GROUP_NAME = 'doge'
 
 _app = adsk.core.Application.get()
 _design: adsk.fusion.Design = cast(adsk.fusion.Design, _app.activeProduct)
@@ -104,7 +108,7 @@ def getCornerVector(edge: adsk.fusion.BRepEdge) -> adsk.core.Vector3D:
     return face1normal
 
 
-def getToolBody(edge: adsk.fusion.BRepEdge, face: adsk.fusion.BRepFace, inputs: DogeboneFeatureInput, topFace: adsk.fusion.BRepFace = None):
+def getToolBody(edge: adsk.fusion.BRepEdge, face: adsk.fusion.BRepFace, inputs: DogeboneFeatureInput, topFace: adsk.fusion.BRepFace = None) -> adsk.fusion.BRepBody:
     tempBrepMgr = adsk.fusion.TemporaryBRepManager.get()
 
     faceNative = native(face)
@@ -216,14 +220,11 @@ def getToolBody(edge: adsk.fusion.BRepEdge, face: adsk.fusion.BRepFace, inputs: 
 def createDogeBones(inputs: DogeboneFeatureInput):
     logger.info("Creating dogbones")
 
-    tempBrepMgr = adsk.fusion.TemporaryBRepManager.get()
     startTlMarker = _design.timeline.markerPosition
 
     # [str] faceId
     # face [adsk.fusion.BRepFace]
     for faceId, face in inputs.faces.items():
-
-        toolBodies = None
 
         # TODO: topFace
         topFace = None
@@ -234,20 +235,9 @@ def createDogeBones(inputs: DogeboneFeatureInput):
         #     logger.info(f"Processing holes from top face - {topFace.tempId}")
         #     debugFace(topFace)
 
-        edgesForFace = getDogboneEdgesForFace(face)
-        if len(edgesForFace) == 0:
-            logger.debug(f"No edges found for face {face.entityToken}")
+        toolBodies = createDogeBoneToolBody(face, inputs, topFace)
+        if toolBodies is None:
             continue
-
-        for edge in edgesForFace:
-            if not toolBodies:
-                toolBodies = getToolBody(edge, face, inputs, topFace=topFace)
-            else:
-                tempBrepMgr.booleanOperation(
-                    toolBodies,
-                    getToolBody(edge, face, inputs, topFace=topFace),
-                    adsk.fusion.BooleanTypes.UnionBooleanType,
-                )
 
         baseFeature = _rootComp.features.baseFeatures.add()
         baseFeature.name = "doge"
@@ -280,6 +270,67 @@ def createDogeBones(inputs: DogeboneFeatureInput):
             startTlMarker, endTlMarker
         )
         timelineGroup.name = "dogbone"
+
+
+def createDogeBoneToolBody(face: adsk.fusion.BRepFace, inputs: DogeboneFeatureInput, topFace: Optional[adsk.fusion.BRepFace]) -> Optional[adsk.fusion.BRepBody]:
+    tempBrepMgr = adsk.fusion.TemporaryBRepManager.get()
+
+    toolBodies: Optional[adsk.fusion.BRepBody] = None
+    edgesForFace = getDogboneEdgesForFace(face)
+
+    if len(edgesForFace) == 0:
+        logger.debug(f"No edges found for face {face.entityToken}")
+        return None
+
+    for edge in edgesForFace:
+        if not toolBodies:
+            toolBodies = getToolBody(edge, face, inputs, topFace=topFace)
+        else:
+            tempBrepMgr.booleanOperation(
+                toolBodies,
+                getToolBody(edge, face, inputs, topFace=topFace),
+                adsk.fusion.BooleanTypes.UnionBooleanType,
+            )
+
+    return toolBodies
+
+
+def saveToFeature(feature: adsk.fusion.BaseFeature, inputs: DogeboneFeatureInput, face: adsk.fusion.BRepFace):
+    feature.attributes.add(GROUP_NAME, INPUT, inputs.asJson())
+    feature.attributes.add(GROUP_NAME, FACE, face.entityToken)
+
+
+def updateDogFeature(feature: adsk.fusion.BaseFeature, obj: adsk.fusion.TimelineObject):
+    attributes = feature.attributes.itemsByGroup(GROUP_NAME)
+
+    isDogFeature = attributes is not None and len(attributes) > 0
+    if not isDogFeature:
+        return
+
+    logger.debug(f"update feature '{feature.name}' at index: {obj.index}")
+
+    inputAsJson = feature.attributes.itemByName(GROUP_NAME, INPUT).value
+    entityToken = feature.attributes.itemByName(GROUP_NAME, FACE).value
+
+    if not obj.rollTo(False):
+        raise Exception('Cannot rollback history')
+
+    entities = _design.findEntityByToken(entityToken)
+
+    if not (entities is not None and len(entities) == 1):
+        raise Exception('Cannot find initial face')
+
+    face = cast(adsk.fusion.BRepFace, entities[0])
+    input = DogeboneFeatureInput.fromJson(inputAsJson)
+
+    # TODO: topFace
+    toolBodies = createDogeBoneToolBody(face, input, None)
+    if toolBodies is None:
+        raise Exception('Cannot create tool bodies')
+
+    feature.startEdit()
+    feature.updateBody(feature.bodies[0], toolBodies)
+    feature.finishEdit()
 
 
 def getDogboneEdgesForFace(face) -> List[adsk.fusion.BRepEdge]:
