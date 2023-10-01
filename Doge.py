@@ -102,7 +102,7 @@ class DogeAddIn(commands.AddIn):
     def actions(self) -> List[Action]:
         return [
             Action('create', 'Create Dogbone', 'Creates dogbones for given faces', 'resources/ui/create_button', CreateDogeCommand),
-            Action('update', 'Update Dogbones', 'Update all dogbones', 'resources/ui/create_button', UpdateDogeCommand)
+            Action('update', 'Update Dogbones', 'Update all dogbones', 'resources/ui/update_button', UpdateDogeCommand)
         ]
 
 
